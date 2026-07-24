@@ -10,10 +10,50 @@ import os
 import re
 import sys
 import urllib.request
+import urllib.parse
 from datetime import datetime, timezone
 
 STATE_FILE = "state.json"
 POLL_URL = "https://www.desidime.com/new"
+
+
+
+def send_ntfy_notification(deal):
+    """Send notification to ntfy.sh topic."""
+    topic = os.environ.get("NTFY_TOPIC", "")
+    if not topic:
+        return
+
+    title = f"New Deal: {deal['title'][:80]}"
+    body = []
+    if deal["price"]:
+        body.append(f"Price: {deal['price']}")
+    if deal["store"]:
+        body.append(f"Store: {deal['store']}")
+    body.append(deal["url"])
+    if deal["hotness"]:
+        body.append(f"Hotness: {deal['hotness']} | Comments: {deal['comments']}")
+    message = "\n".join(body)
+
+    data = json.dumps({
+        "topic": topic,
+        "title": title,
+        "message": message,
+        "tags": ["fire", "moneybag"],
+        "priority": 4,
+    }).encode()
+
+    req = urllib.request.Request(
+        "https://ntfy.sh",
+        data=data,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        urllib.request.urlopen(req, timeout=5)
+        print(f"  ntfy sent to /{topic}")
+    except Exception as e:
+        print(f"  ntfy failed: {e}")
+
 
 
 def fetch_page(url):
@@ -158,6 +198,7 @@ def main():
                 if d['time_ago']:
                     print(f"  Posted: {d['time_ago']}")
                 print(sep)
+                send_ntfy_notification(d)
         else:
             print(f"[{ts}] No new deals. Latest: #{last_id}")
 
