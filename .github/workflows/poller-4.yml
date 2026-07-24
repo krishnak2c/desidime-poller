@@ -1,0 +1,34 @@
+name: DD :04
+
+on:
+  schedule:
+    - cron: '4-59/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CACHE_KEY: desidime-state
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore poller state
+        id: cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: state.json
+          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ env.CACHE_KEY }}-
+      - name: Run poller
+        run: python desidime-poller.py
+      - name: Save poller state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: state.json
+          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}
