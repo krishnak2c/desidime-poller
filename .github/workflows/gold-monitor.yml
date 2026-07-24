@@ -1,0 +1,39 @@
+name: Gold Monitor
+
+on:
+  schedule:
+    - cron: '0 */4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CACHE_KEY: gold-state
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore state
+        id: cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: gold-state.json
+          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ env.CACHE_KEY }}-
+
+      - name: Run gold monitor
+        run: python gold-monitor.py
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+
+      - name: Save state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: gold-state.json
+          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}
