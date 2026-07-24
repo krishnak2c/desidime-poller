@@ -18,11 +18,41 @@ POLL_URL = "https://www.desidime.com/new"
 
 
 
+PRIORITY_STORES = ["swiggy", "instamart", "flipkart", "flipkart minutes", "jiomart",
+                       "zepto", "blinkit", "bbdaily", "bigbasket"]
+
+
+def should_notify(deal):
+    """Check if deal passes notification threshold."""
+    store = (deal.get("store") or "").lower()
+    title = (deal.get("title") or "").lower()
+
+    # Priority stores: notify immediately regardless of hotness
+    for s in PRIORITY_STORES:
+        if s in store or s in title:
+            return True
+
+    # Otherwise: hotness >= 100
+    hotness_str = deal.get("hotness") or "0"
+    try:
+        hotness = int(hotness_str.replace("\u00b0", "").replace("°", ""))
+    except ValueError:
+        hotness = 0
+    return hotness >= 100
+
+
 def send_ntfy_notification(deal):
-    """Send notification to ntfy.sh topic."""
+    """Send notification to ntfy.sh topic if deal passes filters."""
     topic = os.environ.get("NTFY_TOPIC", "")
-    if not topic:
+    if not topic or not should_notify(deal):
         return
+
+    store_tag = deal.get("store", "").lower()
+    is_priority = any(s in store_tag or s in (deal.get("title") or "").lower()
+                      for s in PRIORITY_STORES)
+
+    priority = 5 if is_priority else 3
+    tags = ["fire", "moneybag"] if not is_priority else ["fire", "moneybag", "star"]
 
     title = f"New Deal: {deal['title'][:80]}"
     body = []
@@ -39,8 +69,8 @@ def send_ntfy_notification(deal):
         "topic": topic,
         "title": title,
         "message": message,
-        "tags": ["fire", "moneybag"],
-        "priority": 4,
+        "tags": tags,
+        "priority": priority,
     }).encode()
 
     req = urllib.request.Request(
@@ -50,7 +80,7 @@ def send_ntfy_notification(deal):
     )
     try:
         urllib.request.urlopen(req, timeout=5)
-        print(f"  ntfy sent to /{topic}")
+        print(f"  ntfy sent to /{topic} (priority={priority})")
     except Exception as e:
         print(f"  ntfy failed: {e}")
 
@@ -185,9 +215,10 @@ def main():
             state["last_seen_id"] = new_max
             print(f"[{ts}] ** {len(new_deals)} NEW DEAL(S) FOUND **")
             for d in new_deals:
+                will_notify = should_notify(d)
                 sep = "=" * 60
                 print(f"\n{sep}")
-                print(f"  NEW DEAL! #{d['id']}")
+                print(f"  NEW DEAL! #{d['id']}" + (" [NOTIFYING]" if will_notify else " [skipped: low hotness]"))
                 print(f"  {d['title']}")
                 if d['price']:
                     print(f"  Price: {d['price']}")
@@ -198,7 +229,8 @@ def main():
                 if d['time_ago']:
                     print(f"  Posted: {d['time_ago']}")
                 print(sep)
-                send_ntfy_notification(d)
+                if will_notify:
+                    send_ntfy_notification(d)
         else:
             print(f"[{ts}] No new deals. Latest: #{last_id}")
 
