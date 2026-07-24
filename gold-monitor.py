@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gold Rate Monitor — Haldwani 22K/1g. Polls bankbazaar, tracks change, notifies via ntfy."""
+"""Gold & Silver Monitor — Haldwani 22K gold + silver. Polls bankbazaar, notifies on change."""
 
 import json
 import os
@@ -8,11 +8,12 @@ import sys
 import urllib.request
 from datetime import datetime, timezone
 
-STATE_FILE = "gold-state.json"
+STATE_FILE = "rates-state.json"
 GOLD_URL = "https://www.bankbazaar.com/gold-rate-haldwani.html"
+SILVER_URL = "https://www.bankbazaar.com/silver-rate-haldwani.html"
 
 
-def fetch_page(url):
+def fetch(url):
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -25,18 +26,24 @@ def fetch_page(url):
         return resp.read().decode("utf-8", errors="replace")
 
 
-def extract_22k_1g(html):
-    """Parse today's 22K/1g gold rate from bankbazaar table.
-    Table structure: Gram | Today | Yesterday | Change
-    1 gram row has today's 22K price in second <td>."""
+def extract_gold(html):
+    """Parse 22K/1g from gold rate page. Table: Gram | Today | Yesterday | Change"""
     m = re.search(
         r"<td[^>]*>\s*1\s*gram\s*</td>\s*"
-        r"<td[^>]*>\s*<[^>]*>\s*₹\s*([\d,]+)\s*</",
+        r"<td[^>]*>\s*<[^>]*>\s*[Rs\u20B9]+\s*([\d,]+)\s*<",
         html, re.DOTALL | re.IGNORECASE
     )
-    if m:
-        return m.group(1).replace(",", "")
-    return None
+    return m.group(1).replace(",", "") if m else None
+
+
+def extract_silver(html):
+    """Parse silver 1g from silver rate page. Same table structure."""
+    m = re.search(
+        r"<td[^>]*>\s*1\s*gram\s*</td>\s*"
+        r"<td[^>]*>\s*<[^>]*>\s*[Rs\u20B9]+\s*([\d,]+)\s*<",
+        html, re.DOTALL | re.IGNORECASE
+    )
+    return m.group(1).replace(",", "") if m else None
 
 
 def load_state():
@@ -46,7 +53,7 @@ def load_state():
                 return json.load(f)
         except (json.JSONDecodeError, OSError):
             pass
-    return {"date": None, "rate": "0", "first_run": True}
+    return {"date": "", "gold": "0", "silver": "0", "first_run": True}
 
 
 def save_state(state):
@@ -54,75 +61,89 @@ def save_state(state):
         json.dump(state, f)
 
 
-def send_ntfy(rate, prev_rate, desc):
+def send_ntfy(gold, silver, prev_gold, prev_silver, gd, sd):
     topic = os.environ.get("NTFY_TOPIC", "")
     if not topic:
         return
-    title = "Gold 22K: ₹" + rate + "/g"
-    body = "\n".join(filter(None, [
-        "Haldwani — 22 Carat",
-        "Today: ₹" + rate + "/g",
-        "Prev:  ₹" + prev_rate + "/g" if prev_rate != "0" else "",
-        desc,
-        "https://www.bankbazaar.com/gold-rate-haldwani.html",
-    ]))
-    headers = {"Title": title, "Priority": "3", "Tags": "droplet"}
+
+    g_dir = "UP" if gd > 0 else "DOWN" if gd < 0 else ""
+    s_dir = "UP" if sd > 0 else "DOWN" if sd < 0 else ""
+    gc = (" " + g_dir + " Rs." + format(abs(gd), ",")) if gd != 0 else " (same)"
+    sc = (" " + s_dir + " Rs." + format(abs(sd), ",")) if sd != 0 else " (same)"
+
+    title = "Gold: Rs." + gold + "/g  |  Silver: Rs." + silver + "/g"
+    body = "\n".join([
+        "Haldwani — 22K Gold",
+        "Today: Rs." + gold + "/g  (prev: Rs." + prev_gold + "/g" + gc + ")",
+        "",
+        "Silver",
+        "Today: Rs." + silver + "/g  (prev: Rs." + prev_silver + "/g" + sc + ")",
+        "",
+        GOLD_URL,
+    ])
+
+    headers = {"Title": title[:80], "Priority": "3", "Tags": "droplet"}
     req = urllib.request.Request(
         "https://ntfy.sh/" + topic, data=body.encode(), headers=headers
     )
     try:
         urllib.request.urlopen(req, timeout=5)
-        print("  ntfy sent to /" + topic)
+        print("  ntfy sent")
     except Exception as e:
         print("  ntfy failed: " + str(e))
 
 
 def main():
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    print("[" + ts + "] Gold Monitor starting")
+    print("[" + ts + "] Rates Monitor starting")
 
     state = load_state()
     print("[" + ts + "] State: first_run=" + str(state.get("first_run"))
-          + ", rate=" + str(state.get("rate")))
+          + " gold=" + str(state.get("gold")) + " silver=" + str(state.get("silver")))
 
     try:
-        html = fetch_page(GOLD_URL)
+        gold_html = fetch(GOLD_URL)
+        silver_html = fetch(SILVER_URL)
     except Exception as e:
         print("[" + ts + "] Fetch failed: " + str(e))
         sys.exit(1)
 
-    rate = extract_22k_1g(html)
-    if not rate:
-        print("[" + ts + "] Could not parse rate")
+    gold = extract_gold(gold_html)
+    silver = extract_silver(silver_html)
+
+    if not gold or not silver:
+        print("[" + ts + "] Parse failed — gold=" + str(gold) + " silver=" + str(silver))
         sys.exit(0)
 
-    print("[" + ts + "] 22K/1g: ₹" + rate)
+    print("[" + ts + "] Gold22K: Rs." + gold + "/g  |  Silver: Rs." + silver + "/g")
 
     if state.get("first_run"):
         state["first_run"] = False
         state["date"] = ts[:10]
-        state["rate"] = rate
+        state["gold"] = gold
+        state["silver"] = silver
         save_state(state)
-        print("[" + ts + "] Initialized at ₹" + rate + "/g")
+        print("[" + ts + "] Initialized — gold: Rs." + gold + ", silver: Rs." + silver)
         return
 
-    now = int(rate)
-    prev = int(state.get("rate", "0"))
-    diff = now - prev
+    pg = int(state.get("gold", "0"))
+    ps = int(state.get("silver", "0"))
+    ng = int(gold)
+    ns = int(silver)
+    gd = ng - pg
+    sd = ns - ps
 
-    if rate != state["rate"]:
-        state["rate"] = rate
+    if gold != state["gold"] or silver != state["silver"]:
+        state["gold"] = gold
+        state["silver"] = silver
         state["date"] = ts[:10]
         save_state(state)
-
-        direction = "UP" if diff > 0 else "DOWN"
-        change = "₹" + format(abs(diff), ",")
-        pct = format(abs(diff) / prev * 100, ".1f") + "%" if prev else "N/A"
-        desc = direction + " " + change + " (" + pct + ")"
-        print("[" + ts + "] Rate changed: " + desc)
-        send_ntfy(rate, str(prev), desc)
+        g_msg = "UP Rs." + format(abs(gd), ",") if gd > 0 else "DOWN Rs." + format(abs(gd), ",") if gd < 0 else "same"
+        s_msg = "UP Rs." + format(abs(sd), ",") if sd > 0 else "DOWN Rs." + format(abs(sd), ",") if sd < 0 else "same"
+        print("[" + ts + "] Changed — gold: " + g_msg + ", silver: " + s_msg)
+        send_ntfy(gold, silver, str(pg), str(ps), gd, sd)
     else:
-        print("[" + ts + "] No change — still ₹" + rate + "/g")
+        print("[" + ts + "] No change — gold: Rs." + gold + ", silver: Rs." + silver)
 
     print("[" + ts + "] Done")
 

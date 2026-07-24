@@ -1,4 +1,4 @@
-name: Gold Monitor
+name: Rates Monitor
 
 on:
   schedule:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  CACHE_KEY: gold-state
+  CACHE_KEY: rates-state
 
 jobs:
   check:
@@ -21,12 +21,12 @@ jobs:
         id: cache-restore
         uses: actions/cache/restore@v4
         with:
-          path: gold-state.json
+          path: rates-state.json
           key: ${{ env.CACHE_KEY }}-${{ github.run_id }}
           restore-keys: |
             ${{ env.CACHE_KEY }}-
 
-      - name: Run gold monitor
+      - name: Run rates monitor
         run: python gold-monitor.py
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
@@ -35,5 +35,5 @@ jobs:
         if: always()
         uses: actions/cache/save@v4
         with:
-          path: gold-state.json
+          path: rates-state.json
           key: ${{ env.CACHE_KEY }}-${{ github.run_id }}
