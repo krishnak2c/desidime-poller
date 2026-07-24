@@ -19,7 +19,7 @@ POLL_URL = "https://www.desidime.com/new"
 
 
 PRIORITY_STORES = ["swiggy", "instamart", "flipkart", "flipkart minutes", "jiomart",
-                       "zepto", "blinkit", "bbdaily", "bigbasket"]
+                       "blinkit"]
 
 
 def should_notify(deal):
