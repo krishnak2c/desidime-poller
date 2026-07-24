@@ -47,9 +47,9 @@ def send_ntfy_notification(deal):
     if not topic or not should_notify(deal):
         return
 
-    store_tag = deal.get("store", "").lower()
-    is_priority = any(s in store_tag or s in (deal.get("title") or "").lower()
-                      for s in PRIORITY_STORES)
+    store_lower = deal.get("store", "").lower()
+    title_lower = deal.get("title", "").lower()
+    is_priority = any(s in store_lower or s in title_lower for s in PRIORITY_STORES)
 
     priority = 5 if is_priority else 3
     tags = ["fire", "moneybag"] if not is_priority else ["fire", "moneybag", "star"]
@@ -65,18 +65,19 @@ def send_ntfy_notification(deal):
         body.append(f"Hotness: {deal['hotness']} | Comments: {deal['comments']}")
     message = "\n".join(body)
 
-    data = json.dumps({
-        "topic": topic,
-        "title": title,
-        "message": message,
-        "tags": tags,
-        "priority": priority,
-    }).encode()
+    # ntfy uses HTTP headers for metadata (title, priority, tags)
+    # and POST body for message text
+    headers = {
+        "Title": title,
+        "Priority": str(priority),
+        "Tags": ",".join(tags),
+    }
+    data = message.encode()
 
     req = urllib.request.Request(
-        "https://ntfy.sh",
+        f"https://ntfy.sh/{topic}",
         data=data,
-        headers={"Content-Type": "application/json"},
+        headers=headers,
     )
     try:
         urllib.request.urlopen(req, timeout=5)
