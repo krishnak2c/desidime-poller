@@ -1,0 +1,6 @@
+name = "gh-dispatch"
+main = "src/index.js"
+compatibility_date = "2024-12-01"
+
+[triggers]
+crons = ["*/5 * * * *", "0 10 * * *", "0 18 * * *"]
