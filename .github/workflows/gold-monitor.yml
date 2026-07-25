@@ -1,8 +1,8 @@
 name: Rates Monitor
 
 on:
-  schedule:
-    - cron: '30 4,12 * * *'
+  repository_dispatch:
+    types: [gold-silver-check]
   workflow_dispatch:
 
 permissions:
