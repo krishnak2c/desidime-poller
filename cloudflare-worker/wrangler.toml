@@ -4,3 +4,7 @@ compatibility_date = "2024-12-01"
 
 [triggers]
 crons = ["*/5 * * * *", "0 10 * * *", "0 18 * * *"]
+
+[[kv_namespaces]]
+binding = "DESIDIME_STATE"
+id = "d27498d76fa748acbec8ed0eeff10813"
